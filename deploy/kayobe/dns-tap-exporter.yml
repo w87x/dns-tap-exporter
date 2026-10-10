@@ -1,0 +1,32 @@
+---
+# Run the exporter next to named on the TF control nodes (or on compute nodes
+# to see per-compute traffic):
+#   kayobe playbook run etc/kayobe/ansible/dns-tap-exporter.yml \
+#     -e dns_tap_iface=eth0 -e dns_tap_image=<registry>/dns-tap-exporter:<tag>
+- name: Deploy dns-tap-exporter
+  hosts: "{{ dns_tap_hosts | default('network') }}"
+  vars:
+    dns_tap_image: "ghcr.io/w87x/dns-tap-exporter:latest"
+    dns_tap_iface: eth0         # interface carrying port-53 traffic to named
+    dns_tap_listen: ":9120"
+    dns_tap_workers: 2
+    dns_tap_window: 1m
+    dns_tap_sample: 1           # raise (e.g. 20) if one host sees very high qps
+  tasks:
+    - name: Run dns-tap-exporter
+      become: true
+      community.docker.docker_container:
+        name: dns-tap-exporter
+        image: "{{ dns_tap_image }}"
+        network_mode: host        # must share the namespace of the tapped interface
+        cap_drop: [ALL]
+        capabilities: [NET_RAW]   # AF_PACKET only
+        security_opts: [no-new-privileges]
+        restart_policy: unless-stopped
+        read_only: true
+        command:
+          - "--iface={{ dns_tap_iface }}"
+          - "--listen={{ dns_tap_listen }}"
+          - "--workers={{ dns_tap_workers }}"
+          - "--window={{ dns_tap_window }}"
+          - "--sample={{ dns_tap_sample }}"
